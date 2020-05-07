@@ -116,6 +116,7 @@ class MatrixBot:
         listening_rooms,
         commands,
     ):
+
         """Set up the client."""
         self.hass = hass
 
@@ -129,10 +130,12 @@ class MatrixBot:
 
         self._listening_rooms = listening_rooms
 
-        # We have to fetch the aliases for every room to make sure we don't
-        # join it twice by accident. However, fetching aliases is costly,
-        # so we only do it once per room.
-        self._aliases_fetched_for = set()
+
+        # Store joined rooms locally as fetching them from client is buggy.
+        # This will probably be fragile in cases where our user may be kicked or
+        # otherwise leave any rooms
+        # Dict of room objects.
+        self._rooms_joined = {}
 
         # Word commands are stored dict-of-dict: First dict indexes by room ID
         #  / alias, second dict indexes by the word
@@ -223,24 +226,17 @@ class MatrixBot:
         We can't just always call join_room(), since that seems to crash
         the client if we're already in the room.
         """
-        rooms = self._client.get_rooms()
-        if room_id_or_alias in rooms:
-            _LOGGER.debug("Already in room %s", room_id_or_alias)
-            return rooms[room_id_or_alias]
-
-        for room in rooms.values():
-            if room.room_id not in self._aliases_fetched_for:
-                room.update_aliases()
-                self._aliases_fetched_for.add(room.room_id)
-
-            if room_id_or_alias in room.aliases:
-                _LOGGER.debug(
-                    "Already in room %s (known as %s)", room.room_id, room_id_or_alias
-                )
-                return room
+        
+        if room_id_or_alias in self._rooms_joined:
+            _LOGGER.debug(
+                "Already in room %s", room_id_or_alias
+            )
+            room = self._rooms_joined[room_id_or_alias]
+            return room
 
         room = self._client.join_room(room_id_or_alias)
-        _LOGGER.info("Joined room %s (known as %s)", room.room_id, room_id_or_alias)
+        _LOGGER.info("Joined room %s",room_id_or_alias)
+        self._rooms_joined[room_id_or_alias] = room
         return room
 
     def _join_rooms(self):
